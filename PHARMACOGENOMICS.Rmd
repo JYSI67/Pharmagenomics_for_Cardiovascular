@@ -1,0 +1,308 @@
+---
+title: "33657149_ASSGM3"
+output: pdf_document
+date: "2023-10-12"
+---
+
+
+```{r}
+# Setting the working directory
+setwd("C:/Users/JYOTI/Documents/fit5145/assgm 3")
+getwd()
+
+
+#install.packages("pheatmap")
+#install.packages("reshape2")
+#install.packages("caret")
+#install.packages("ROCR")
+
+#Loading the necessary libraries
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(reshape2)
+library(tidyr)
+library(caret)
+library(ROCR)
+```
+
+Reading the TSV Files
+
+```{r}
+
+# Load the relationship data
+relationship_data_org <- read.table("relationships/relationships.tsv", header = TRUE, sep = "\t", quote = "", fill = TRUE)
+
+# If reading with tab separator fails, try reading with a comma delimiter
+if (is.null(data)) {
+  relationship_data_org <- read.table("relationships/relationships.tsv", header = TRUE, sep = ",", quote = "", fill = TRUE)
+}
+head(relationship_data_org)
+View(relationship_data_org)
+
+# Load the clinical annotations data
+clinical_ann_data <- read.table("clinicalAnnotations/clinical_ann_alleles.tsv", header = TRUE, sep = "\t", quote = "", fill = TRUE)
+
+head(clinical_ann_data)
+View(clinical_ann_data)
+
+# Load the clinical variants data
+clinical_Variants_data <- read.table("clinicalVariants/clinicalVariants.tsv", header = TRUE, sep = "\t", quote = "", fill = TRUE)
+
+head(clinical_Variants_data)
+View(clinical_Variants_data)
+
+# Load the genes data
+genes_data <- read.table("genes/genes.tsv", header = TRUE, sep = "\t", quote = "", fill = TRUE)
+
+head(genes_data)
+View(genes_data)
+
+```
+
+
+Filtering out other diseases and only keeping cardiovascular disease
+
+```{r}
+# Filter relationship data for cardiovascular diseases
+relationship_data <- relationship_data_org[grep("cardiovascular", relationship_data_org$Entity2_name, ignore.case = TRUE), ]
+View(relationship_data)
+
+# Filter clinical annotation data for cardiovascular diseases
+clinical_ann_data <- clinical_ann_data[grep("cardiovascular", clinical_ann_data$Annotation.Text, ignore.case = TRUE), ]
+View(clinical_ann_data)
+
+# Filter clinical variants data for cardiovascular diseases
+clinical_Variants_data <- clinical_Variants_data[grep("cardiovascular", clinical_Variants_data$phenotypes, ignore.case = TRUE), ]
+View(clinical_Variants_data)
+
+# Join relationship data with genes data
+merged_relationship_genes <- left_join(relationship_data, genes_data, by = c("Entity1_id" = "PharmGKB.Accession.Id"))
+View(merged_relationship_genes)
+
+
+```
+
+
+Check Data Types and Structure:
+
+```{r}
+# Display data structure
+str(merged_relationship_genes)
+# Summary statistics
+summary(merged_relationship_genes)
+
+
+
+# Check unique values and frequency of character variables
+unique_values <- sapply(merged_relationship_genes, function(x) length(unique(x)))
+show(unique_values)
+
+
+# Check summary statistics for numeric variables
+summary(merged_relationship_genes[c("Chromosomal.Start...GRCh37", "Chromosomal.Stop...GRCh37", "Chromosomal.Start...GRCh38", "Chromosomal.Stop...GRCh38")])
+
+
+
+```
+
+
+The bar chart provides an intuitive visual representation of how different types of entities relate to specific associations. It helps identify patterns and trends in the data, making it easier to draw insights from the dataset. For example, it may reveal whether certain entity types are more commonly associated or not associated with particular factors.
+
+
+
+```{r}
+
+# Create a table to count the frequency of combinations of Entity1_type and Association
+
+table_data <- table(merged_relationship_genes$Entity1_type, merged_relationship_genes$Association)
+
+# Convert the table to a data frame for plotting
+df <- as.data.frame.table(table_data)
+colnames(df) <- c("Entity1_type", "Association", "Frequency")
+
+# Create a bar chart
+ggplot(df, aes(x = Entity1_type, y = Frequency, fill = Association)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Relationship between Entity1_type and Association", x = "Genes", y = "Frequency") +
+  scale_fill_manual(values = c("associated" = "lightblue", "not associated" = "lightgreen", "ambiguous" = "darkgrey")) +
+  theme_minimal()
+
+
+```
+
+The resulting heatmap visualizes the level of evidence for different types of evidence (e.g., Toxicity, Efficacy) associated with genes. It allows users to quickly identify patterns and relationships between genes and the strength of evidence for different types of evidence.
+
+```{r}
+
+
+# Aggregate the data to create a matrix of level of evidence by gene and chemicals
+data_matrix <- dcast(clinical_Variants_data, gene ~ type, value.var = "level.of.evidence", fun.aggregate = length)
+
+# Replace NAs with zeros if necessary
+data_matrix[is.na(data_matrix)] <- 0
+
+# Set the row names (genes) as the gene column and remove the gene column
+rownames(data_matrix) <- data_matrix$gene
+data_matrix <- data_matrix[,-1]
+
+# Create the heatmap
+pheatmap(data_matrix, 
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         color = colorRampPalette(c("white", "blue"))(100),  # Adjust the color palette
+         main = "Level of Evidence Heatmap",
+         fontsize = 8,
+         cellwidth = 20,
+         cellheight = 15,
+         show_rownames = TRUE,
+         show_colnames = TRUE
+)
+
+
+```
+
+
+
+```{r}
+
+ggplot(clinical_Variants_data, aes(x = level.of.evidence, y = gene)) +
+  geom_point() +
+  labs(x = "Level of Evidence", y = "genes", title = "Scatter Plot of Level of Evidence vs. genes")
+
+
+```
+
+
+
+```{r}
+unique_values <- unique(relationship_data$Entity1_type)
+print(unique_values)
+unique_values2 <- unique(relationship_data$Evidence)
+print(unique_values2)
+unique_values3 <- unique(relationship_data$Association)
+print(unique_values3)
+```
+
+
+A grouped bar chart is created to visualize the level of evidence for chemicals based on their types. Each bar represents a chemical, and the height of the bars corresponds to the level of evidence, with different colors indicating the types.
+
+```{r}
+# Create a grouped bar chart
+ggplot(clinical_Variants_data, aes(x = chemicals, y = level.of.evidence, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Level of Evidence for Chemicals by Type", x = "Chemicals", y = "Level of Evidence") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+
+```
+
+The creation of below model serves the purpose of binary classification to predict whether a specific relationship is associated with cardiovascular diseases or not. The model is trained to make predictions based on input features and historical dat
+
+```{r}
+relationship_data$IsVariant <- as.numeric(relationship_data$Entity1_type == "Variant")
+relationship_data$IsGene <- as.numeric(relationship_data$Entity1_type == "Gene")
+relationship_data$IsHaplotype <- as.numeric(relationship_data$Entity1_type == "Haplotype")
+relationship_data$IsDisease <- as.numeric(relationship_data$Entity1_type == "Disease")
+
+# Create a numerical representation of evidence levels
+evidence_levels <- c("Level1", "Level2", "Level3", "Level4", "Level5", "Level6")
+relationship_data$EvidenceNumeric <- as.numeric(factor(relationship_data$Evidence, levels = evidence_levels))
+
+relationship_data$IsAssociated <- as.numeric(relationship_data$Association == "associated")
+
+
+```
+
+
+Builds a logistic regression model for binary classification using the training data.
+
+```{r}
+
+# Set the target variable 'TargetVariable' based on the condition
+relationship_data_org$TargetVariable <- factor(ifelse(relationship_data_org$Entity2_name == "Cardiovascular Diseases", 1, 0))
+
+# Encode categorical variables
+# This section encodes categorical variables as factors and prepares the data for modeling.
+# Encode Entity1_type and Association as factors
+relationship_data_md <- relationship_data_org %>%
+  mutate(Entity1_type = factor(Entity1_type),
+         #Evidence = factor(Evidence),
+         Association = factor(Association)) %>%
+  mutate(Entity1_type = as.integer(Entity1_type),
+         #Evidence = as.integer(Evidence),
+         Association = as.integer(Association))
+
+# Remove unnecessary columns
+columns_to_remove <- c("Entity1_id", "Entity1_name", "Entity2_id", "Entity2_name", "PMIDs","PK","PD","Evidence")
+relationship_data_md <- relationship_data_org %>%
+  select(-all_of(columns_to_remove))
+
+
+# Data splitting
+set.seed(123)  # For reproducibility
+train_proportion <- 0.8
+train_indices <- sample(seq_len(nrow(relationship_data_md)), size = train_proportion * nrow(relationship_data_md))
+train_data <- relationship_data_md[train_indices, ]
+test_data <- relationship_data_md[-train_indices, ]
+
+# Model training
+model <- glm(TargetVariable ~ ., data = train_data, family = binomial)
+
+# Set the factor levels for TargetVariable in both train_data and test_data
+train_data$TargetVariable <- factor(train_data$TargetVariable, levels = levels(test_data$TargetVariable))
+test_data$TargetVariable <- factor(test_data$TargetVariable, levels = levels(train_data$TargetVariable))
+
+# Model evaluation
+predictions <- predict(model, newdata = test_data, type = "response")
+predictions_class <- ifelse(predictions > 0.5, 1, 0)
+
+# Convert predictions_class to a factor
+predictions_class <- factor(predictions_class, levels = levels(test_data$TargetVariable))
+test_data$TargetVariable <- as.factor(test_data$TargetVariable)
+
+```
+
+
+Assesses the model's performance using metrics like accuracy, precision, recall, and F1 score.
+
+```{r}
+
+# Assuming you have predictions and actual labels
+conf_matrix <- confusionMatrix(predictions_class, test_data$TargetVariable)
+# Assuming you have predictions and actual labels
+conf_matrix <- confusionMatrix(predictions_class, test_data$TargetVariable)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Extract specific metrics
+accuracy <- conf_matrix$overall[1]
+precision <- conf_matrix$byClass['Pos Pred Value']
+recall <- conf_matrix$byClass['Sensitivity']
+f1_score <- conf_matrix$byClass['F1']
+
+# Print the metrics
+cat("Accuracy:", accuracy, "\n")
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1 Score:", f1_score, "\n")
+
+
+```
+
+Plots the ROC curve and calculates the Area Under the Curve (AUC) to evaluate the model's ability to discriminate between classes.
+
+```{r}
+# Assuming you have probabilities of being in the positive class
+pred <- prediction(predictions, test_data$TargetVariable)
+roc_perf <- performance(pred, "tpr", "fpr")
+roc_auc <- performance(pred, "auc")
+
+# Plot the ROC curve
+plot(roc_perf, main = "ROC Curve")
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+```
